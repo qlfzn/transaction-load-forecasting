@@ -124,7 +124,7 @@ def calculate_metrics(predictions, actuals):
 # HEADER
 # ============================================
 st.markdown('<div class="main-header"> Transaction Load Forecasting</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Real-time prediction visualization powered by RNN</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Real-time prediction visualization</div>', unsafe_allow_html=True)
 
 # ============================================
 # SIDEBAR - CONTROLS

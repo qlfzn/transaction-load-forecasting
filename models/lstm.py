@@ -19,9 +19,9 @@ def run_lstm(train, test, lookback=10, epochs=30, use_early_stopping=5):
     print(f"Training shape: {X_train.shape}")  # Should see this!
     
     model = Sequential([
-        LSTM(64, activation='relu', input_shape=(lookback, 1)),
+        LSTM(64, activation='tanh', input_shape=(lookback, 1)),
         Dense(1),
-        Dropout(0.1)
+        Dropout(0.3)
     ])
     model.compile(optimizer='adam', loss='mse')
     model.summary(print_fn=lambda x: print(f"       {x}"))

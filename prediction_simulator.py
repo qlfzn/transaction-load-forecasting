@@ -17,7 +17,6 @@ CONFIG = {
     'display_interval': 1.0,
 }
 
-
 # Load & prepare data
 print("=" * 70)
 print("SIMPLE TRANSACTION PREDICTION SIMULATOR")
@@ -51,7 +50,6 @@ test_data = df_agg[split_idx:].copy()
 print("\n  Dataset Split:")
 print(f"  ├─ Training: {len(train_data):,} minutes ({len(train_data)/len(df_agg)*100:.1f}%)")
 print(f"  └─ Testing:  {len(test_data):,} minutes ({len(test_data)/len(df_agg)*100:.1f}%)")
-
 
 # Load model
 print("\n[3/4] Loading prediction model...")
