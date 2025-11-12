@@ -1,5 +1,43 @@
 import pandas as pd
-from typing import Tuple
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
+# Module-level scaler for normalization/denormalization
+txn_scaler = MinMaxScaler(feature_range=(0, 1))
+
+def normalize_txn_count(df: pd.DataFrame, fit=True) -> pd.DataFrame:
+    """
+    Normalize txn_count column using MinMaxScaler (0-1 range)
+    
+    Args:
+        df: DataFrame with 'txn_count' column
+        fit: If True, fit scaler on data. If False, use previously fitted scaler
+    
+    Returns:
+        DataFrame with normalized 'txn_count' column
+    """
+    df = df.copy()
+    
+    if fit:
+        # Fit scaler on the data
+        df['txn_count'] = txn_scaler.fit_transform(df[['txn_count']])
+    else:
+        # Use previously fitted scaler (for test data)
+        df['txn_count'] = txn_scaler.transform(df[['txn_count']])
+    
+    return df
+
+def denormalize_predictions(predictions: np.ndarray) -> np.ndarray:
+    """
+    Convert normalized predictions back to original scale
+    
+    Args:
+        predictions: Normalized predictions array
+    
+    Returns:
+        Denormalized predictions in original scale
+    """
+    return txn_scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()
 
 def set_timeseries(df: pd.DataFrame, resample_freq: str) -> pd.DataFrame:
     df['timestamp'] = pd.to_datetime(df['timestamp'], format="mixed")

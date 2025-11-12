@@ -1,8 +1,10 @@
 import os
 import warnings
 import pandas as pd
+import numpy as np
 import mlflow
 from datetime import datetime
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from utils import loader, preprocessor, visualiser
 from models.lstm import run_lstm
@@ -16,7 +18,7 @@ CONFIG = {
     'data_path': 'data/synthetic_fraud_data.csv',
     'multivariate': True,
     'train_ratio': 0.8,
-    'resample_freq': '1min',  # Can change to '5min', '15min', '1H' for faster testing
+    'resample_freq': '1min',
     'lstm_lookback': 60,
     'lstm_epochs': 50,
     'cnn_lstm_lookback': 60,
@@ -44,6 +46,14 @@ print(f"  ✓ Time taken: {(datetime.now() - start_time).seconds}s")
 
 # Add time-series features
 df = preprocessor.add_time_features(df)
+
+# Normalize txn_count (IMPORTANT: fit on full data before split)
+print("\n[1.5/6] Normalizing data...")
+df = preprocessor.normalize_txn_count(df, fit=True)
+print("  ✓ Normalized txn_count to [0, 1] range")
+print(f"  - Min: {df['txn_count'].min():.4f}")
+print(f"  - Max: {df['txn_count'].max():.4f}")
+print(f"  - Mean: {df['txn_count'].mean():.4f}")
 
 # Set index and split - ALWAYS return full DataFrames with features + target
 train_df, test_df = preprocessor.prepare_train_data(
@@ -94,12 +104,30 @@ with mlflow.start_run(run_name=batch_run_name) as parent_run:
                     multivariate=CONFIG['multivariate']
                 )
                 
-                # Get avg TPS appropriately
+                # Denormalize predictions
+                preds_denorm = preprocessor.denormalize_predictions(preds)
+                
+                # Get test actuals and align with predictions (skip lookback samples)
+                lookback = params.get('lookback')
                 if CONFIG['multivariate']:
-                    avg_tps = float(test_df['txn_count'].mean())  # type: ignore
+                    actuals_raw = test_df['txn_count'].values[lookback:]
                 else:
-                    # test_df is a Series in univariate mode
-                    avg_tps = float(test_df.mean())  # type: ignore
+                    actuals_raw = test_df.values[lookback:]
+                
+                # Denormalize actuals
+                actuals_denorm = preprocessor.denormalize_predictions(actuals_raw)  # type: ignore
+                
+                # Ensure same length (in case of any edge cases)
+                min_len = min(len(actuals_denorm), len(preds_denorm))
+                actuals_denorm = actuals_denorm[:min_len]
+                preds_denorm = preds_denorm[:min_len]
+                
+                # Get average for MAPE calculation
+                avg_tps = float(actuals_denorm.mean())
+                
+                # Recalculate metrics on denormalized data
+                mae = mean_absolute_error(actuals_denorm, preds_denorm)
+                rmse = np.sqrt(mean_squared_error(actuals_denorm, preds_denorm))
                 
                 # Calculate additional metrics
                 mape = (mae / avg_tps) * 100 if avg_tps > 0.0 else 0.0
@@ -137,7 +165,8 @@ with mlflow.start_run(run_name=batch_run_name) as parent_run:
                     'Time (s)': training_time
                 })
                 
-                return True, preds, mae
+                # Return denormalized predictions for plotting
+                return True, preds_denorm, mae
                 
             except Exception as e:
                 print(f"  ✗ {model_name} failed: {str(e)}")
