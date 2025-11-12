@@ -7,39 +7,50 @@ from tensorflow.keras.models import Sequential # type: ignore
 from tensorflow.keras.layers import SimpleRNN, Dense, Dropout # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping # type: ignore
 
-def create_sequences(data, lookback):
+def create_sequences(data, lookback, multivariate=False):
     """
     Create sequences for time series prediction
     
     Args:
-        data: array of time series values
+        data: array of time series values (univariate) or DataFrame (multivariate)
         lookback: number of previous time steps to use as input
+        multivariate: whether to use multivariate mode
     
     Returns:
-        X: input sequences (samples, lookback)
+        X: input sequences (samples, lookback, features)
         y: target values (samples,)
     """
-    X, y = [], []
-    for i in range(len(data) - lookback):
-        X.append(data[i:i+lookback])
-        y.append(data[i+lookback])
-    return np.array(X), np.array(y)
+    if multivariate:
+        # data should be a DataFrame with features
+        X, y = [], []
+        for i in range(len(data) - lookback):
+            X.append(data.iloc[i:i+lookback].values)  # (lookback, n_features)
+            y.append(data.iloc[i+lookback]['txn_count'])  # target only
+        return np.array(X), np.array(y)
+    else:
+        # Original univariate logic
+        X, y = [], []
+        for i in range(len(data) - lookback):
+            X.append(data[i:i+lookback])
+            y.append(data[i+lookback])
+        return np.array(X), np.array(y)
 
-def run_rnn(train, test, lookback=10, epochs=30, batch_size=64, units=64, 
-            dropout=0.2, use_early_stopping=True, verbose=1):
+def run_rnn(train_data, test_data, lookback, epochs, batch_size=64, units=64, 
+            dropout=0.2, use_early_stopping=True, verbose=1, multivariate=False):
     """
     Train and evaluate a vanilla RNN model for TPS forecasting
     
     Args:
-        train: training time series (pandas Series)
-        test: test time series (pandas Series)
-        lookback: number of previous time steps to use (default: 10)
-        epochs: number of training epochs (default: 30)
+        train_data: training data (Series for univariate, DataFrame for multivariate)
+        test_data: test data (Series for univariate, DataFrame for multivariate)
+        lookback: number of previous time steps to use
+        epochs: number of training epochs
         batch_size: batch size for training (default: 32)
         units: number of RNN units in each layer (default: 64)
         dropout: dropout rate for regularization (default: 0.2)
         use_early_stopping: whether to use early stopping (default: True)
         verbose: training verbosity (0=silent, 1=progress bar, 2=one line per epoch)
+        multivariate: whether to use multivariate mode (default: False)
     
     Returns:
         predictions: predicted values for test set
@@ -47,7 +58,8 @@ def run_rnn(train, test, lookback=10, epochs=30, batch_size=64, units=64,
         rmse: Root Mean Squared Error
     """
     
-    print("\n  ️  RNN Configuration:")
+    mode = "Multivariate" if multivariate else "Univariate"
+    print("\n  ⚙️  RNN Configuration ({})".format(mode))
     print(f"     • Lookback window: {lookback} minutes")
     print(f"     • RNN units: {units}")
     print(f"     • Dropout rate: {dropout}")
@@ -56,26 +68,31 @@ def run_rnn(train, test, lookback=10, epochs=30, batch_size=64, units=64,
     
     # Prepare sequences
     print("\n   Preparing sequences...")
-    X_train, y_train = create_sequences(train.values, lookback)
-    X_test, y_test = create_sequences(test.values, lookback)
-    
-    # Reshape for RNN: (samples, timesteps, features)
-    X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-    X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+    if multivariate:
+        X_train, y_train = create_sequences(train_data, lookback, multivariate=True)
+        X_test, y_test = create_sequences(test_data, lookback, multivariate=True)
+        n_features = X_train.shape[2]
+    else:
+        X_train, y_train = create_sequences(train_data.values, lookback, multivariate=False)
+        X_test, y_test = create_sequences(test_data.values, lookback, multivariate=False)
+        # Reshape for RNN: (samples, timesteps, features)
+        X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
+        X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+        n_features = 1
     
     print(f"     • Training sequences: {X_train.shape[0]:,}")
     print(f"     • Test sequences: {X_test.shape[0]:,}")
-    print(f"     • Input shape: {X_train.shape[1:]} (timesteps, features)")
+    print(f"     • Input shape: ({X_train.shape[1]}, {n_features}) (timesteps, features)")
     
     # Build RNN model
-    print("\n  ️  Building RNN model...")
+    print("\n  ⚙️  Building RNN model...")
     model = Sequential([
         # First RNN layer with return_sequences=True (stacks layers)
         SimpleRNN(
             units=units, 
             activation='tanh',  # RNN typically uses tanh
             return_sequences=True,
-            input_shape=(lookback, 1),
+            input_shape=(lookback, n_features),
             name='rnn_layer_1'
         ),
         Dropout(dropout),
@@ -146,8 +163,8 @@ def run_rnn(train, test, lookback=10, epochs=30, batch_size=64, units=64,
     improvement = ((baseline_mae - mae) / baseline_mae) * 100
     
     # Save model (optional)
-    os.makedirs('models/saved', exist_ok=True)
-    model.save('models/saved/rnn_model.keras')
+    os.makedirs('src/models/saved', exist_ok=True)
+    model.save('src/models/saved/rnn_model.keras')
     print("  ✓ Model saved to models/saved/rnn_model.keras")
     
     return preds, mae, rmse
